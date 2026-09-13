@@ -1,0 +1,53 @@
+name: Deploy event.hoeckeler.ch to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-production
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract v46 frontend
+        run: |
+          rm -rf dist extracted
+          mkdir -p dist extracted
+          unzip -q event_shift_planner_v46_event_hoeckeler_ch.zip -d extracted
+          cp -a extracted/event_shift_planner_v46_event_hoeckeler_ch/static/. dist/
+
+      - name: Configure production frontend
+        run: |
+          cat > dist/config.js <<'EOF'
+          window.HOECKELER_CONFIG = {
+            API_BASE_URL: "https://api.event.hoeckeler.ch",
+            ENV_NAME: "production",
+            TEST_SYSTEM: false
+          };
+          EOF
+          printf '%s\n' "event.hoeckeler.ch" > dist/CNAME
+          touch dist/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
