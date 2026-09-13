@@ -1,0 +1,61 @@
+services:
+  db-test:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-hoeckeler_test}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-hoeckeler_test}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:?set TEST_POSTGRES_PASSWORD}
+    volumes:
+      - test_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-hoeckeler_test} -d ${TEST_POSTGRES_DB:-hoeckeler_test}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app-test:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db-test:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql://${TEST_POSTGRES_USER:-hoeckeler_test}:${TEST_POSTGRES_PASSWORD}@db-test:5432/${TEST_POSTGRES_DB:-hoeckeler_test}
+      AUTH_SECRET: ${TEST_AUTH_SECRET:?set TEST_AUTH_SECRET}
+      BOOTSTRAP_ADMIN: ${TEST_BOOTSTRAP_ADMIN:-admin}
+      BOOTSTRAP_PASSWORD: ${TEST_BOOTSTRAP_PASSWORD:?set TEST_BOOTSTRAP_PASSWORD}
+      PORT: 8080
+      ALLOW_JSON_FALLBACK: "false"
+      COOKIE_SECURE: "true"
+      CROSS_SITE_COOKIES: "true"
+      CORS_ALLOWED_ORIGINS: ${GITHUB_PAGES_ORIGIN:?set GITHUB_PAGES_ORIGIN}
+      TEST_MODE: "true"
+      TEST_EMAIL_REDIRECT: ${TEST_EMAIL_REDIRECT:-}
+      TEST_SMS_REDIRECT: ${TEST_SMS_REDIRECT:-}
+    expose:
+      - "8080"
+
+  caddy-test:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app-test
+    ports:
+      - "8082:80"
+      - "8443:443"
+    environment:
+      TEST_API_DOMAIN: ${TEST_API_DOMAIN:?set TEST_API_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile.test:/etc/caddy/Caddyfile:ro
+      - caddy_test_data:/data
+      - caddy_test_config:/config
+
+volumes:
+  test_postgres:
+    name: hoeckeler_event_planner_test_postgres
+  caddy_test_data:
+    name: hoeckeler_event_planner_test_caddy_data
+  caddy_test_config:
+    name: hoeckeler_event_planner_test_caddy_config

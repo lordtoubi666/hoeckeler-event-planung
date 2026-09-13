@@ -1,0 +1,10 @@
+.env
+.env.production
+.env.test
+data.json
+__pycache__/
+*.pyc
+.pytest_cache/
+backups/
+dist/
+.DS_Store
