@@ -1,0 +1,443 @@
+{
+  "swaps": [
+    {
+      "id": "swp_5716178d1d",
+      "notes": "Bin Abwesend",
+      "status": "completed",
+      "created_at": "2026-09-12T11:39:50",
+      "assignment_id": "asg_e665d817ae",
+      "target_person_id": "per_83590c35b2",
+      "requester_person_id": "per_bfbb393aaf"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr_ba578a5f3f",
+      "role": "admin",
+      "salt": "60173697c7986522d6c06979ffed3f05",
+      "active": true,
+      "username": "admin",
+      "person_id": "",
+      "display_name": "Administrator",
+      "password_hash": "2cdda39ea4b1e841ccfb9a0fe4561803d2d10429a19d4cc93a5a3c91fd6b8861",
+      "password_iterations": 600000,
+      "must_change_password": true
+    },
+    {
+      "id": "usr_6b17b66258",
+      "role": "employee",
+      "salt": "63fa81c076a762eceffcc4dc01f0cbb7",
+      "active": true,
+      "username": "tobi",
+      "person_id": "per_bfbb393aaf",
+      "display_name": "Tobi",
+      "password_hash": "474c021693b96bc75f692d7f0928c1a62059a2140f8d1c594db71fda58d1967b",
+      "password_iterations": 600000,
+      "must_change_password": false
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_ceb2f6bd9f",
+      "name": "MIO",
+      "notes": "",
+      "status": "published",
+      "end_date": "2026-09-20",
+      "location": "Olten",
+      "start_date": "2026-09-18"
+    }
+  ],
+  "people": [
+    {
+      "id": "per_bfbb393aaf",
+      "name": "Tobias Loosli",
+      "email": "tobias.loosli@outlook.com",
+      "phone": "0797288101",
+      "max_hours_day": 10.0
+    },
+    {
+      "id": "per_83590c35b2",
+      "name": "Kilian Zuber",
+      "email": "",
+      "phone": "",
+      "max_hours_day": 10.0
+    }
+  ],
+  "shifts": [
+    {
+      "id": "shf_f4feb1f2cf",
+      "end": "14:00",
+      "date": "2026-09-18",
+      "name": "Morgen Schicht",
+      "notes": "",
+      "start": "11:00",
+      "contact": "Schichtleiter",
+      "clothing": "Polo und Schwarze Hose",
+      "event_id": "evt_ceb2f6bd9f",
+      "required": 3,
+      "instructions": "Wagen Inbetrieb nehmen \nGetränke auffüllen",
+      "meeting_point": "11:00",
+      "leader_person_id": ""
+    },
+    {
+      "id": "shf_5c14e510d4",
+      "end": "18:00",
+      "date": "2026-09-19",
+      "name": "Nachmittag Schicht",
+      "notes": "",
+      "start": "14:00",
+      "contact": "Kilian",
+      "clothing": "Polo  und Schwarze Hose",
+      "event_id": "evt_ceb2f6bd9f",
+      "required": 5,
+      "instructions": "",
+      "meeting_point": "13:30",
+      "leader_person_id": ""
+    }
+  ],
+  "skills": [],
+  "settings": {
+    "smtp_tls": true,
+    "smtp_from": "",
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "email_enabled": false,
+    "smtp_password": "",
+    "min_rest_hours": 8,
+    "weekly_warning_hours": 40
+  },
+  "waitlist": [],
+  "audit_log": [
+    {
+      "id": "aud_752db24949",
+      "kind": "event",
+      "action": "event_created",
+      "details": "MIO",
+      "item_id": "evt_ceb2f6bd9f",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:15:40"
+    },
+    {
+      "id": "aud_00de9d90f9",
+      "kind": "events",
+      "action": "updated",
+      "details": "status",
+      "item_id": "evt_ceb2f6bd9f",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:15:52"
+    },
+    {
+      "id": "aud_262c0f0c1b",
+      "kind": "assignment",
+      "action": "assignment_created",
+      "details": "per_bfbb393aaf->shf_394c36cf35",
+      "item_id": "asg_8321e3999e",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:16:53"
+    },
+    {
+      "id": "aud_7322dfec9d",
+      "kind": "shifts",
+      "action": "updated",
+      "details": "meeting_point,clothing,contact,instructions",
+      "item_id": "shf_f4feb1f2cf",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:37:06"
+    },
+    {
+      "id": "aud_eb092f4d49",
+      "kind": "shifts",
+      "action": "updated",
+      "details": "meeting_point,clothing,contact,instructions",
+      "item_id": "shf_f4feb1f2cf",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:37:20"
+    },
+    {
+      "id": "aud_164a949956",
+      "kind": "shifts",
+      "action": "updated",
+      "details": "meeting_point,clothing,contact,instructions",
+      "item_id": "shf_f4feb1f2cf",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:37:40"
+    },
+    {
+      "id": "aud_df20bc3946",
+      "kind": "assignment",
+      "action": "assignment_created",
+      "details": "per_bfbb393aaf->shf_f4feb1f2cf",
+      "item_id": "asg_da91242b55",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:38:22"
+    },
+    {
+      "id": "aud_27d0d49f3c",
+      "kind": "assignment",
+      "action": "assignment_created",
+      "details": "per_bfbb393aaf->shf_f4feb1f2cf",
+      "item_id": "asg_e665d817ae",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:38:51"
+    },
+    {
+      "id": "aud_599fce706c",
+      "kind": "assignment",
+      "action": "assignment_confirmed",
+      "details": "",
+      "item_id": "asg_e665d817ae",
+      "user_id": "usr_6b17b66258",
+      "username": "tobi",
+      "created_at": "2026-09-12T11:39:11"
+    },
+    {
+      "id": "aud_153018f182",
+      "kind": "swap",
+      "action": "swap_requested",
+      "details": "Bin Abwesend",
+      "item_id": "swp_5716178d1d",
+      "user_id": "usr_6b17b66258",
+      "username": "tobi",
+      "created_at": "2026-09-12T11:39:50"
+    },
+    {
+      "id": "aud_e111b76660",
+      "kind": "shifts",
+      "action": "updated",
+      "details": "meeting_point,clothing,contact,instructions",
+      "item_id": "shf_5c14e510d4",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:41:24"
+    },
+    {
+      "id": "aud_2671e3758f",
+      "kind": "people",
+      "action": "updated",
+      "details": "name,role,email,phone,max_hours_day",
+      "item_id": "per_83590c35b2",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:41:38"
+    },
+    {
+      "id": "aud_dbce1c6c99",
+      "kind": "swap",
+      "action": "swap_completed",
+      "details": "",
+      "item_id": "swp_5716178d1d",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:41:57"
+    },
+    {
+      "id": "aud_872196d2ad",
+      "kind": "assignment",
+      "action": "assignment_created",
+      "details": "per_bfbb393aaf->shf_5c14e510d4",
+      "item_id": "asg_8dbeb58e96",
+      "user_id": "usr_ba578a5f3f",
+      "username": "admin",
+      "created_at": "2026-09-12T11:42:23"
+    },
+    {
+      "id": "aud_f996fd131b",
+      "kind": "assignment",
+      "action": "self_assigned",
+      "details": "per_bfbb393aaf->shf_f4feb1f2cf",
+      "item_id": "asg_8af5bc6e65",
+      "user_id": "usr_6b17b66258",
+      "username": "tobi",
+      "created_at": "2026-09-12T11:42:52"
+    },
+    {
+      "id": "aud_34a1f147b1",
+      "kind": "assignment",
+      "action": "assignment_confirmed",
+      "details": "",
+      "item_id": "asg_8af5bc6e65",
+      "user_id": "usr_6b17b66258",
+      "username": "tobi",
+      "created_at": "2026-09-12T11:42:55"
+    },
+    {
+      "id": "aud_4fe9a23d7f",
+      "kind": "assignment",
+      "action": "assignment_confirmed",
+      "details": "",
+      "item_id": "asg_8dbeb58e96",
+      "user_id": "usr_6b17b66258",
+      "username": "tobi",
+      "created_at": "2026-09-12T11:42:55"
+    }
+  ],
+  "templates": [
+    {
+      "id": "tpl_33b791b719",
+      "end": "14:00",
+      "date": "2026-09-18",
+      "name": "Morgen Schicht",
+      "notes": "",
+      "start": "11:00",
+      "event_id": "evt_ceb2f6bd9f",
+      "required": 3,
+      "leader_person_id": ""
+    }
+  ],
+  "assignments": [
+    {
+      "id": "asg_e665d817ae",
+      "shift_id": "shf_f4feb1f2cf",
+      "person_id": "per_83590c35b2"
+    },
+    {
+      "id": "asg_8dbeb58e96",
+      "shift_id": "shf_5c14e510d4",
+      "person_id": "per_bfbb393aaf"
+    },
+    {
+      "id": "asg_8af5bc6e65",
+      "shift_id": "shf_f4feb1f2cf",
+      "person_id": "per_bfbb393aaf"
+    }
+  ],
+  "email_queue": [
+    {
+      "id": "mail_b1b97636f9",
+      "to": "tobias.loosli@outlook.com",
+      "body": "Neue Schicht zugewiesen: Morgen Schicht am 2026-09-18",
+      "error": "email disabled or incomplete SMTP configuration",
+      "status": "failed",
+      "subject": "Höckeler Event Planung",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:38:22",
+      "processed_at": "2026-09-12T11:38:22"
+    },
+    {
+      "id": "mail_9ead3816d4",
+      "to": "tobias.loosli@outlook.com",
+      "body": "Neue Schicht zugewiesen: Morgen Schicht am 2026-09-18",
+      "error": "email disabled or incomplete SMTP configuration",
+      "status": "failed",
+      "subject": "Höckeler Event Planung",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:38:51",
+      "processed_at": "2026-09-12T11:38:51"
+    },
+    {
+      "id": "mail_35887dcfee",
+      "to": "tobias.loosli@outlook.com",
+      "body": "Schichttausch wurde genehmigt",
+      "error": "email disabled or incomplete SMTP configuration",
+      "status": "failed",
+      "subject": "Höckeler Event Planung",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:41:57",
+      "processed_at": "2026-09-12T11:41:57"
+    },
+    {
+      "id": "mail_b0790bb4c8",
+      "to": "tobias.loosli@outlook.com",
+      "body": "Neue Schicht zugewiesen: Nachmittag Schicht am 2026-09-19",
+      "error": "email disabled or incomplete SMTP configuration",
+      "status": "failed",
+      "subject": "Höckeler Event Planung",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:42:23",
+      "processed_at": "2026-09-12T11:42:23"
+    }
+  ],
+  "availability": [],
+  "event_people": [],
+  "shift_skills": [],
+  "confirmations": [
+    {
+      "id": "cnf_bf6554f7fc",
+      "person_id": "per_bfbb393aaf",
+      "confirmed_at": "2026-09-12T11:39:11",
+      "assignment_id": "asg_e665d817ae"
+    },
+    {
+      "id": "cnf_c3e6cbad00",
+      "person_id": "per_bfbb393aaf",
+      "confirmed_at": "2026-09-12T11:42:55",
+      "assignment_id": "asg_8af5bc6e65"
+    },
+    {
+      "id": "cnf_325f21504c",
+      "person_id": "per_bfbb393aaf",
+      "confirmed_at": "2026-09-12T11:42:55",
+      "assignment_id": "asg_8dbeb58e96"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "not_49c2409d16",
+      "kind": "shift",
+      "read": true,
+      "message": "Neue Schicht zugewiesen: Morgen am 2026-08-18",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:16:53"
+    },
+    {
+      "id": "not_742377b1ee",
+      "kind": "shift",
+      "read": false,
+      "message": "Neue Schicht zugewiesen: Morgen Schicht am 2026-09-18",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:38:22"
+    },
+    {
+      "id": "not_abefc1cad4",
+      "kind": "shift",
+      "read": false,
+      "message": "Neue Schicht zugewiesen: Morgen Schicht am 2026-09-18",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:38:51"
+    },
+    {
+      "id": "not_8d4954a4ff",
+      "kind": "swap",
+      "read": false,
+      "message": "Neue Schichttausch-Anfrage",
+      "user_id": "usr_ba578a5f3f",
+      "created_at": "2026-09-12T11:39:50"
+    },
+    {
+      "id": "not_669135fe39",
+      "kind": "swap",
+      "read": false,
+      "message": "Schichttausch wurde genehmigt",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:41:57"
+    },
+    {
+      "id": "not_46dfdf54b8",
+      "kind": "shift",
+      "read": false,
+      "message": "Neue Schicht zugewiesen: Nachmittag Schicht am 2026-09-19",
+      "user_id": "usr_6b17b66258",
+      "created_at": "2026-09-12T11:42:23"
+    },
+    {
+      "id": "not_2cda426058",
+      "kind": "assignment",
+      "read": false,
+      "message": "Tobias Loosli hat sich selbst für Morgen Schicht eingetragen",
+      "user_id": "usr_ba578a5f3f",
+      "created_at": "2026-09-12T11:42:52"
+    }
+  ],
+  "person_skills": [],
+  "schema_version": 5,
+  "signup_requests": []
+}
