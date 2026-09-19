@@ -19,29 +19,14 @@ LOGIN_ATTEMPTS = {}
 PASSWORD_ITERATIONS = 600000
 BOOTSTRAP_ADMIN = os.getenv("BOOTSTRAP_ADMIN", "admin")
 BOOTSTRAP_PASSWORD = os.getenv("BOOTSTRAP_PASSWORD", "ChangeMe123!")
-ENVIRONMENT = os.getenv("ENVIRONMENT","development").strip().lower()
-APP_VERSION = "v46"
-CORS_ALLOWED_ORIGINS = {x.strip().rstrip("/") for x in os.getenv("CORS_ALLOWED_ORIGINS","").split(",") if x.strip()}
-CROSS_SITE_COOKIES = os.getenv("CROSS_SITE_COOKIES","false").lower() in ("1","true","yes")
-TEST_MODE = os.getenv("TEST_MODE","false").lower() in ("1","true","yes")
-TEST_EMAIL_REDIRECT = os.getenv("TEST_EMAIL_REDIRECT","").strip()
-TEST_SMS_REDIRECT = os.getenv("TEST_SMS_REDIRECT","").strip()
-PASSWORD_RESET_ATTEMPTS = {}
-CSRF_EXEMPT_PATHS={"/api/login","/api/request-password-reset","/api/complete-password-reset"}
-
-def _validate_runtime_config():
-    if ENVIRONMENT!="production": return
-    problems=[]
-    if not DATABASE_URL:problems.append("DATABASE_URL is required")
-    if AUTH_SECRET=="change-this-in-production" or len(AUTH_SECRET)<32:problems.append("AUTH_SECRET must be random and at least 32 characters")
-    if BOOTSTRAP_PASSWORD=="ChangeMe123!" or len(BOOTSTRAP_PASSWORD)<12:problems.append("BOOTSTRAP_PASSWORD must be changed and at least 12 characters")
-    if not COOKIE_SECURE:problems.append("COOKIE_SECURE=true is required")
-    if ALLOW_JSON_FALLBACK:problems.append("ALLOW_JSON_FALLBACK=false is required")
-    if problems:raise RuntimeError("Unsafe production configuration: "+"; ".join(problems))
+UPLOADS = Path(os.getenv("UPLOAD_DIR", str(ROOT / "uploads")))
+UPLOADS.mkdir(parents=True, exist_ok=True)
+MAX_EVENT_FILE_BYTES = int(os.getenv("MAX_EVENT_FILE_BYTES", str(20*1024*1024)))
+ALLOWED_EVENT_FILE_TYPES = {"application/pdf":".pdf","image/jpeg":".jpg","image/png":".png","image/webp":".webp"}
 
 EMPTY = {
     "events": [], "people": [], "shifts": [], "assignments": [], "templates": [],
-    "users": [], "availability": [], "swaps": [], "notifications": [], "audit_log": [], "confirmations": [], "waitlist": [], "signup_requests": [], "event_people": [], "skills": [], "person_skills": [], "shift_skills": [], "email_queue": [], "sms_queue": [], "password_resets": [], "reminder_log": [], "schema_version": 7, "settings": {"min_rest_hours": 8, "weekly_warning_hours": 40, "smtp_host": "", "smtp_port": 587, "smtp_user": "", "smtp_password": "", "smtp_from": "", "smtp_tls": True, "email_enabled": False, "sms_enabled": False, "sms_webhook_url": "", "sms_bearer_token": "", "sms_sender": "Hoeckeler", "automatic_reminders": True, "shift_reminder_days": "7,1", "availability_reminder_days": "3,1"}
+    "users": [], "availability": [], "swaps": [], "notifications": [], "audit_log": [], "confirmations": [], "waitlist": [], "signup_requests": [], "event_people": [], "skills": [], "person_skills": [], "shift_skills": [], "email_queue": [], "sms_queue": [], "password_resets": [], "reminder_log": [], "invites": [], "schema_version": 7, "settings": {"min_rest_hours": 8, "weekly_warning_hours": 40, "smtp_host": "", "smtp_port": 587, "smtp_user": "", "smtp_password": "", "smtp_from": "", "smtp_tls": True, "email_enabled": False, "sms_enabled": False, "sms_webhook_url": "", "sms_bearer_token": "", "sms_sender": "Hoeckeler", "automatic_reminders": True, "shift_reminder_days": "7,1", "availability_reminder_days": "3,1"}
 }
 
 def _default_data():
@@ -53,10 +38,14 @@ def _ensure_keys(data):
     data["settings"].setdefault("min_rest_hours",8)
     data["settings"].setdefault("weekly_warning_hours",40)
     data.setdefault("audit_log",[])
-    data["schema_version"]=max(int(data.get("schema_version",1)),7)
+    data["schema_version"]=max(int(data.get("schema_version",1)),8)
+    for ev in data.get("events",[]):
+        ev.setdefault("archived",False); ev.setdefault("archived_at",""); ev.setdefault("documents",[])
     for k,v in {"smtp_host":"","smtp_port":587,"smtp_user":"","smtp_password":"","smtp_from":"","smtp_tls":True,"email_enabled":False,"sms_enabled":False,"sms_webhook_url":"","sms_bearer_token":"","sms_sender":"Hoeckeler","automatic_reminders":True,"shift_reminder_days":"7,1","availability_reminder_days":"3,1"}.items(): data["settings"].setdefault(k,v)
     for user in data.get("users",[]):
         user.setdefault("calendar_token",secrets.token_urlsafe(32))
+    for person in data.get("people",[]):
+        person.setdefault("active",True)
     if not data["users"]:
         salt=secrets.token_hex(16)
         data["users"].append({
@@ -99,10 +88,7 @@ def load_data():
         if not DATA.exists(): DATA.write_text(json.dumps(_ensure_keys(_default_data()),indent=2),encoding="utf-8")
         try: data=json.loads(DATA.read_text(encoding="utf-8"))
         except Exception: data=_default_data()
-        before=json.dumps(data,sort_keys=True,ensure_ascii=False)
         data=_ensure_keys(data)
-        if json.dumps(data,sort_keys=True,ensure_ascii=False)!=before:
-            DATA.write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding="utf-8")
         return data
 
 def save_data(data):
@@ -238,10 +224,6 @@ def build_xlsx_bytes(data, event_id="", date_filter=""):
 
 
 def _send_email(settings,to_addr,subject,body):
-    if TEST_MODE:
-        subject="[TEST] "+subject
-        if not TEST_EMAIL_REDIRECT:return False,"TEST_EMAIL_REDIRECT is required in test mode"
-        to_addr=TEST_EMAIL_REDIRECT
     if not settings.get("email_enabled") or not settings.get("smtp_host") or not to_addr:
         return False,"email disabled or incomplete SMTP configuration"
     msg=EmailMessage();msg["Subject"]=subject;msg["From"]=settings.get("smtp_from") or settings.get("smtp_user");msg["To"]=to_addr
@@ -256,9 +238,6 @@ def _send_email(settings,to_addr,subject,body):
     except Exception as e:return False,str(e)
 
 def _send_sms(settings,to_number,message):
-    if TEST_MODE:
-        if not TEST_SMS_REDIRECT:return False,"TEST_SMS_REDIRECT is required in test mode"
-        to_number=TEST_SMS_REDIRECT
     if not settings.get("sms_enabled") or not settings.get("sms_webhook_url") or not to_number:
         return False,"SMS disabled or incomplete gateway configuration"
     payload=json.dumps({
@@ -303,7 +282,7 @@ def _ics_escape(value):
     return str(value or "").replace("\\","\\\\").replace(",","\\,").replace(";","\\;").replace("\n","\\n")
 
 def _calendar_bytes(data,pid):
-    published={e["id"] for e in data.get("events",[]) if e.get("status","draft")=="published"}
+    published={e["id"] for e in data.get("events",[]) if e.get("status","draft")=="published" and not e.get("archived",False)}
     events={e["id"]:e for e in data.get("events",[])}
     lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Hoeckeler//Event Planung//DE","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:Höckeler – Meine Schichten"]
     for a in data.get("assignments",[]):
@@ -403,48 +382,9 @@ def _reminder_worker():
         time.sleep(3600)
 
 class Handler(SimpleHTTPRequestHandler):
-    def _request_origin(self):
-        return self.headers.get("Origin","").rstrip("/")
-
-    def _origin_allowed(self):
-        origin=self._request_origin()
-        return not origin or origin in CORS_ALLOWED_ORIGINS
-
-    def _cors_headers(self):
-        origin=self._request_origin()
-        if origin and origin in CORS_ALLOWED_ORIGINS:
-            return {"Access-Control-Allow-Origin":origin,"Access-Control-Allow-Credentials":"true","Vary":"Origin"}
-        return {}
-
-    def _session_token(self):
-        c=SimpleCookie();c.load(self.headers.get("Cookie",""));m=c.get("hes_session")
-        return m.value if m else ""
-
-    def _csrf_token(self):
-        token=self._session_token()
-        return hmac.new(AUTH_SECRET.encode(),("csrf:"+token).encode(),hashlib.sha256).hexdigest() if token else ""
-
-    def _csrf_ok(self,path):
-        if path in CSRF_EXEMPT_PATHS:return True
-        token=self._session_token()
-        if not token:return True
-        supplied=self.headers.get("X-CSRF-Token","")
-        expected=self._csrf_token()
-        return bool(supplied and expected and hmac.compare_digest(supplied,expected))
-
-    def do_OPTIONS(self):
-        if not self._origin_allowed():return self._json(403,{"error":"origin not allowed"})
-        self.send_response(204)
-        for k,v in self._cors_headers().items():self.send_header(k,v)
-        self.send_header("Access-Control-Allow-Methods","GET,POST,PATCH,DELETE,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers","Content-Type,X-CSRF-Token")
-        self.send_header("Access-Control-Max-Age","600")
-        self.end_headers()
-
     def _json(self,status,payload,headers=None):
         body=json.dumps(payload,ensure_ascii=False).encode("utf-8")
         self.send_response(status); self.send_header("Content-Type","application/json; charset=utf-8")
-        for k,v in self._cors_headers().items():self.send_header(k,v)
         if headers:
             for k,v in headers.items(): self.send_header(k,v)
         self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -463,7 +403,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _public_user(self,u):
         if not u:return None
-        return {k:u.get(k) for k in ("id","username","display_name","role","person_id","active","must_change_password","email_notifications","sms_notifications")}
+        return {k:u.get(k) for k in ("id","username","display_name","role","person_id","active","must_change_password","email_notifications","sms_notifications","default_view")}
 
     def _require(self,data,roles=None):
         u=self._current_user(data)
@@ -481,15 +421,23 @@ class Handler(SimpleHTTPRequestHandler):
         if len(data["audit_log"])>5000:data["audit_log"]=data["audit_log"][-5000:]
 
     def do_GET(self):
-        p=urlparse(self.path)
-        if p.path.startswith("/api/") and not self._origin_allowed():return self._json(403,{"error":"origin not allowed"})
-        data=load_data()
-        if p.path=="/api/health": return self._json(200,{"ok":True,"version":APP_VERSION,"environment":ENVIRONMENT,"test_mode":TEST_MODE,"storage":"postgresql" if DATABASE_URL else "json-development"})
+        p=urlparse(self.path); data=load_data()
+        if p.path=="/api/health": return self._json(200,{"ok":True,"storage":"postgresql" if DATABASE_URL else "json-development"})
         if p.path=="/api/me":
             u=self._current_user(data); return self._json(200,{"user":self._public_user(u)}) if u else self._json(401,{"error":"login required"})
-        if p.path=="/api/csrf":
-            u=self._current_user(data);return self._json(200,{"csrf_token":self._csrf_token()}) if u else self._json(401,{"error":"login required"})
         parts=[x for x in p.path.split("/") if x]
+        if len(parts)==2 and parts[0]=="invite":
+            # SPA fallback: let the frontend load and validate the token itself via /api/invite/<token>.
+            self.path="/index.html"
+            return super().do_GET()
+        if len(parts)==3 and parts[0]=="api" and parts[1]=="invite":
+            token=parts[2]
+            payload=_unsign(token)
+            inv=next((x for x in data.get("invites",[]) if payload and x.get("id")==payload.get("invite_id")),None) if payload else None
+            if not inv:return self._json(404,{"error":"invalid or expired invitation"})
+            if inv.get("used"):return self._json(410,{"error":"this invitation has already been used"})
+            if inv.get("revoked"):return self._json(410,{"error":"this invitation has been revoked"})
+            return self._json(200,{"email":inv.get("email",""),"role":inv.get("role",""),"display_name":inv.get("display_name","")})
         if len(parts)==3 and parts[0]=="calendar" and parts[2]=="shifts.ics":
             token=parts[1]
             user=next((x for x in data.get("users",[]) if hmac.compare_digest(str(x.get("calendar_token","")),token) and x.get("active",True)),None)
@@ -509,13 +457,21 @@ class Handler(SimpleHTTPRequestHandler):
         if not u:
             return
 
+        if len(parts)==4 and parts[0]=="api" and parts[1]=="event-documents":
+            event_id,doc_id=parts[2],parts[3]
+            ev=next((e for e in data.get("events",[]) if e.get("id")==event_id),None)
+            doc=next((d for d in (ev or {}).get("documents",[]) if d.get("id")==doc_id),None)
+            if not ev or not doc:return self._json(404,{"error":"document not found"})
+            if u.get("role")=="employee" and not doc.get("employee_visible",False):return self._json(403,{"error":"forbidden"})
+            fp=UPLOADS/event_id/doc.get("stored_name","")
+            if not fp.exists():return self._json(404,{"error":"file missing"})
+            payload=fp.read_bytes();self.send_response(200);self.send_header("Content-Type",doc.get("mime_type","application/octet-stream"));self.send_header("Content-Disposition",f'inline; filename="{doc.get("name","document")}"');self.send_header("Content-Length",str(len(payload)));self.end_headers();self.wfile.write(payload);return
+
         if p.path=="/api/state":
             state={k:data.get(k,[]) for k in EMPTY}
-            state["settings"]=dict(data.get("settings",{}))
-            state["settings"].pop("smtp_password",None);state["settings"].pop("sms_bearer_token",None)
             state["users"]=[self._public_user(x) for x in data["users"]] if u["role"]=="admin" else []
+            state["invites"]=data.get("invites",[]) if u["role"]=="admin" else []
             state["current_user"]=self._public_user(u)
-            state["runtime"]={"version":APP_VERSION,"environment":ENVIRONMENT,"test_mode":TEST_MODE}
             if u["role"]=="employee" and u.get("person_id"):
                 pid=u["person_id"]
                 # Employees only receive assignments/availability relevant to themselves, but all shifts/events for context.
@@ -544,6 +500,20 @@ class Handler(SimpleHTTPRequestHandler):
         if p.path=="/api/audit":
             if u["role"]!="admin":return self._json(403,{"error":"admin only"})
             return self._json(200,{"audit_log":list(reversed(data.get("audit_log",[])[-1000:]))})
+        if p.path=="/api/invites":
+            if u["role"]!="admin":return self._json(403,{"error":"admin only"})
+            now=int(time.time())
+            rows=sorted(data.get("invites",[]),key=lambda x:x.get("created_at",""),reverse=True)
+            return self._json(200,{"invites":[{**x,"expired":not x.get("used") and not x.get("revoked") and x.get("expires_at",0)<now} for x in rows]})
+        if len(parts)==4 and parts[0]=="api" and parts[1]=="invites" and parts[3]=="link":
+            if u["role"]!="admin":return self._json(403,{"error":"admin only"})
+            inv=next((x for x in data.get("invites",[]) if x.get("id")==parts[2]),None)
+            if not inv:return self._json(404,{"error":"invitation not found"})
+            if inv.get("used") or inv.get("revoked"):return self._json(410,{"error":"this invitation is no longer active"})
+            token=_sign({"invite_id":inv["id"],"exp":inv["expires_at"]})
+            proto=self.headers.get("X-Forwarded-Proto","https" if COOKIE_SECURE else "http").split(",")[0].strip()
+            host=self.headers.get("Host","localhost")
+            return self._json(200,{"link":f"{proto}://{host}/invite/{token}"})
         if p.path=="/api/backup":
             if u["role"]!="admin":return self._json(403,{"error":"admin only"})
             payload=json.dumps(data,indent=2,ensure_ascii=False).encode(); self.send_response(200)
@@ -562,28 +532,22 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json(404,{"error":"not found"})
 
     def do_POST(self):
-        p=urlparse(self.path)
-        if not self._origin_allowed():return self._json(403,{"error":"origin not allowed"})
-        data=load_data(); body=self._body()
-        if not self._csrf_ok(p.path):return self._json(403,{"error":"invalid csrf token"})
+        p=urlparse(self.path); data=load_data(); body=self._body()
+        parts=[x for x in p.path.split("/") if x]
         if p.path=="/api/login":
             username=str(body.get("username","")).strip().lower(); password=str(body.get("password",""))
             client=self.client_address[0] if self.client_address else "unknown";key=f"{client}:{username}";now=time.time();attempts=[t for t in LOGIN_ATTEMPTS.get(key,[]) if now-t<900]
             if len(attempts)>=5:return self._json(429,{"error":"too many login attempts; try again later"})
             user=next((x for x in data["users"] if x.get("username","").lower()==username and x.get("active",True)),None)
             if not user or not _verify_password(password,user):LOGIN_ATTEMPTS[key]=attempts+[now];return self._json(401,{"error":"invalid username or password"})
-            LOGIN_ATTEMPTS.pop(key,None);token=_sign({"uid":user["id"],"exp":int(time.time()+12*3600)});secure="; Secure" if COOKIE_SECURE else "";same_site="None" if CROSS_SITE_COOKIES else "Lax"
-            return self._json(200,{"user":self._public_user(user)},{"Set-Cookie":f"hes_session={token}; HttpOnly; SameSite={same_site}; Path=/; Max-Age=43200{secure}"})
+            LOGIN_ATTEMPTS.pop(key,None);token=_sign({"uid":user["id"],"exp":int(time.time()+12*3600)});secure="; Secure" if COOKIE_SECURE else ""
+            return self._json(200,{"user":self._public_user(user)},{"Set-Cookie":f"hes_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200{secure}"})
         if p.path=="/api/logout":
-            secure="; Secure" if COOKIE_SECURE else "";same_site="None" if CROSS_SITE_COOKIES else "Lax"
-            return self._json(200,{"ok":True},{"Set-Cookie":f"hes_session=; HttpOnly; SameSite={same_site}; Path=/; Max-Age=0{secure}"})
+            secure="; Secure" if COOKIE_SECURE else ""
+            return self._json(200,{"ok":True},{"Set-Cookie":f"hes_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure}"})
 
         if p.path=="/api/request-password-reset":
             username=str(body.get("username","")).strip().lower()
-            now=int(time.time());reset_key=f"{self.client_address[0] if self.client_address else 'unknown'}:{username}"
-            recent=[x for x in PASSWORD_RESET_ATTEMPTS.get(reset_key,[]) if now-x<900]
-            if len(recent)>=5:return self._json(429,{"error":"too many password reset requests; try again later"})
-            PASSWORD_RESET_ATTEMPTS[reset_key]=recent+[now]
             user=next((x for x in data.get("users",[]) if x.get("username","").lower()==username and x.get("active",True)),None)
             # Always return a neutral response to avoid exposing account existence.
             if user:
@@ -616,9 +580,44 @@ class Handler(SimpleHTTPRequestHandler):
             self._audit(data,user,"password_reset_completed","user",user["id"]);save_data(data)
             return self._json(200,{"ok":True})
 
+        if p.path=="/api/accept-invite":
+            token=str(body.get("token",""))
+            payload=_unsign(token)
+            inv=next((x for x in data.get("invites",[]) if payload and x.get("id")==payload.get("invite_id")),None) if payload else None
+            if not inv:return self._json(404,{"error":"invalid or expired invitation"})
+            if inv.get("used"):return self._json(410,{"error":"this invitation has already been used"})
+            if inv.get("revoked"):return self._json(410,{"error":"this invitation has been revoked"})
+            username=str(body.get("username","")).strip().lower(); password=str(body.get("password",""))
+            display_name=str(body.get("display_name","")).strip() or inv.get("display_name","") or username
+            if not username or not password:return self._json(400,{"error":"username and password required"})
+            if len(password)<10:return self._json(400,{"error":"password must contain at least 10 characters"})
+            if any(x.get("username","").lower()==username for x in data["users"]):return self._json(409,{"error":"username already exists"})
+            person_id=str(inv.get("person_id","")).strip()
+            if not person_id:
+                person_item={"id":uid("per"),"name":display_name,"email":inv.get("email",""),"phone":"","max_hours_day":10,"active":True}
+                data["people"].append(person_item); person_id=person_item["id"]
+            salt=secrets.token_hex(16)
+            item={"id":uid("usr"),"username":username,"display_name":display_name,"role":inv.get("role","employee"),"person_id":person_id,"active":True,"salt":salt,"password_hash":_hash_password(password,salt),"password_iterations":PASSWORD_ITERATIONS,"must_change_password":False,"email_notifications":True,"sms_notifications":False,"calendar_token":secrets.token_urlsafe(32)}
+            data["users"].append(item); inv["used"]=True; inv["accepted_user_id"]=item["id"]
+            self._audit(data,item,"invite_accepted","user",item["id"],inv.get("email",""))
+            save_data(data)
+            login_token=_sign({"uid":item["id"],"exp":int(time.time()+12*3600)});secure="; Secure" if COOKIE_SECURE else ""
+            return self._json(200,{"user":self._public_user(item)},{"Set-Cookie":f"hes_session={login_token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200{secure}"})
+
         u=self._require(data)
         if not u:return
         manager=u["role"] in ("admin","manager")
+
+        if p.path=="/api/my-profile":
+            display_name=str(body.get("display_name","")).strip()
+            if not display_name:return self._json(400,{"error":"display name is required"})
+            u["display_name"]=display_name
+            person=next((x for x in data.get("people",[]) if x.get("id")==u.get("person_id")),None)
+            if person and ("email" in body or "phone" in body):
+                if "email" in body:person["email"]=str(body.get("email","")).strip()
+                if "phone" in body:person["phone"]=str(body.get("phone","")).strip()
+            self._audit(data,u,"profile_updated","user",u["id"])
+            save_data(data);return self._json(200,{"user":self._public_user(u),"person":person})
 
         if p.path=="/api/notification-preferences":
             person=next((x for x in data.get("people",[]) if x.get("id")==u.get("person_id")),None)
@@ -626,6 +625,7 @@ class Handler(SimpleHTTPRequestHandler):
             if email_pref and not (person or {}).get("email"):return self._json(400,{"error":"no email address is stored for your employee profile"})
             if sms_pref and not (person or {}).get("phone"):return self._json(400,{"error":"no phone number is stored for your employee profile"})
             u["email_notifications"]=email_pref;u["sms_notifications"]=sms_pref
+            if "default_view" in body:u["default_view"]=str(body.get("default_view") or "").strip()
             self._audit(data,u,"notification_preferences_changed","user",u["id"],f"email={email_pref},sms={sms_pref}")
             save_data(data);return self._json(200,self._public_user(u))
 
@@ -652,6 +652,64 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(body,dict):return self._json(400,{"error":"backup must be a JSON object"})
             save_data(_ensure_keys(body)); return self._json(200,{"ok":True})
 
+        if p.path=="/api/users/bulk":
+            if u["role"]!="admin":return self._json(403,{"error":"admin only"})
+            ids=[str(x) for x in body.get("ids",[])]; action=str(body.get("action","")).strip()
+            if not ids:return self._json(400,{"error":"no users selected"})
+            if action not in ("activate","deactivate","delete","set_role"):return self._json(400,{"error":"invalid bulk action"})
+            if action=="set_role" and body.get("role") not in ("admin","manager","employee"):return self._json(400,{"error":"invalid role"})
+            if action=="deactivate" and u["id"] in ids:return self._json(400,{"error":"you cannot deactivate your own account"})
+            if action=="delete" and u["id"] in ids:return self._json(400,{"error":"you cannot delete your own account"})
+            affected=[]
+            for uid_ in ids:
+                target=next((x for x in data["users"] if x["id"]==uid_),None)
+                if not target:continue
+                if action=="activate":target["active"]=True
+                elif action=="deactivate":target["active"]=False
+                elif action=="set_role":target["role"]=body["role"]
+                affected.append(uid_)
+            if action=="delete":
+                data["users"]=[x for x in data["users"] if x["id"] not in ids]
+            self._audit(data,u,f"users_bulk_{action}","user","",f"{len(affected)} accounts")
+            save_data(data); return self._json(200,{"ok":True,"affected":len(affected)})
+
+        if len(parts)==4 and parts[0]=="api" and parts[1]=="invites" and parts[3]=="resend":
+            if u["role"]!="admin":return self._json(403,{"error":"admin only"})
+            inv=next((x for x in data.get("invites",[]) if x.get("id")==parts[2]),None)
+            if not inv:return self._json(404,{"error":"invitation not found"})
+            if inv.get("used") or inv.get("revoked"):return self._json(410,{"error":"this invitation is no longer active"})
+            token=_sign({"invite_id":inv["id"],"exp":inv["expires_at"]})
+            proto=self.headers.get("X-Forwarded-Proto","https" if COOKIE_SECURE else "http").split(",")[0].strip()
+            host=self.headers.get("Host","localhost")
+            link=f"{proto}://{host}/invite/{token}"
+            emailed=False
+            if data.get("settings",{}).get("email_enabled"):
+                text=f"Du wurdest zur Höckeler Event Planung eingeladen.\n\nErstelle dein Konto über diesen Link (gültig bis {time.strftime('%d.%m.%Y', time.localtime(inv['expires_at']))}):\n{link}"
+                ok,_=_send_email(data["settings"],inv["email"],"Einladung zur Höckeler Event Planung",text); emailed=ok
+            self._audit(data,u,"invite_resent","invite",inv["id"],inv.get("email",""))
+            save_data(data); return self._json(200,{"link":link,"emailed":emailed})
+
+        if p.path=="/api/invites":
+            if u["role"]!="admin":return self._json(403,{"error":"admin only"})
+            email=str(body.get("email","")).strip().lower(); role=str(body.get("role","employee")).strip()
+            person_id=str(body.get("person_id","")).strip(); display_name=str(body.get("display_name","")).strip()
+            if not email:return self._json(400,{"error":"email is required"})
+            if role not in ("admin","manager","employee"):return self._json(400,{"error":"invalid role"})
+            if person_id and not any(x["id"]==person_id for x in data["people"]):return self._json(400,{"error":"unknown person"})
+            now=int(time.time()); expires_at=now+7*86400
+            item={"id":uid("inv"),"email":email,"role":role,"person_id":person_id,"display_name":display_name,"created_by":u["id"],"created_at":time.strftime("%Y-%m-%dT%H:%M:%S"),"expires_at":expires_at,"used":False,"revoked":False}
+            data.setdefault("invites",[]).append(item)
+            token=_sign({"invite_id":item["id"],"exp":expires_at})
+            proto=self.headers.get("X-Forwarded-Proto","https" if COOKIE_SECURE else "http").split(",")[0].strip()
+            host=self.headers.get("Host","localhost")
+            link=f"{proto}://{host}/invite/{token}"
+            emailed=False
+            if data.get("settings",{}).get("email_enabled"):
+                text=f"Du wurdest zur Höckeler Event Planung eingeladen.\n\nErstelle dein Konto über diesen Link (7 Tage gültig):\n{link}"
+                ok,_=_send_email(data["settings"],email,"Einladung zur Höckeler Event Planung",text); emailed=ok
+            self._audit(data,u,"invite_created","invite",item["id"],email)
+            save_data(data); return self._json(201,{"invite":item,"link":link,"emailed":emailed})
+
         if p.path=="/api/users":
             if u["role"]!="admin":return self._json(403,{"error":"admin only"})
             username=str(body.get("username","")).strip().lower(); password=str(body.get("password","")).strip(); role=body.get("role","employee")
@@ -659,7 +717,7 @@ class Handler(SimpleHTTPRequestHandler):
             if role not in ("admin","manager","employee"):return self._json(400,{"error":"invalid role"})
             if any(x.get("username","").lower()==username for x in data["users"]):return self._json(409,{"error":"username already exists"})
             salt=secrets.token_hex(16); item={"id":uid("usr"),"username":username,"display_name":str(body.get("display_name",username)).strip(),"role":role,"person_id":str(body.get("person_id","")).strip(),"active":True,"salt":salt,"password_hash":_hash_password(password,salt),"password_iterations":PASSWORD_ITERATIONS,"must_change_password":bool(body.get("must_change_password",False)),"email_notifications":bool(body.get("email_notifications",True)),"sms_notifications":bool(body.get("sms_notifications",False)),"calendar_token":secrets.token_urlsafe(32)}
-            data["users"].append(item); save_data(data); return self._json(201,self._public_user(item))
+            data["users"].append(item); self._audit(data,u,"user_created","user",item["id"],username); save_data(data); return self._json(201,self._public_user(item))
 
         if p.path=="/api/skills":
             if not manager:return self._json(403,{"error":"manager or admin required"})
@@ -847,17 +905,45 @@ class Handler(SimpleHTTPRequestHandler):
             if body.get("copy_assignments",False):
                 for a in list(data["assignments"]):
                     if a.get("shift_id") in shift_map:data["assignments"].append({"id":uid("asg"),"shift_id":shift_map[a["shift_id"]],"person_id":a["person_id"]})
+            ev["documents"]=[]
+            if body.get("copy_documents",False):
+                import shutil
+                for olddoc in src.get("documents",[]):
+                    nd=dict(olddoc);nd["id"]=uid("doc");nd["uploaded_at"]=time.strftime("%Y-%m-%dT%H:%M:%S");nd["uploaded_by"]=u.get("username","")
+                    oldfp=UPLOADS/source_id/olddoc.get("stored_name","")
+                    if oldfp.exists():
+                        newname=nd["id"]+Path(olddoc.get("stored_name","")).suffix;nd["stored_name"]=newname;(UPLOADS/ev["id"]).mkdir(parents=True,exist_ok=True);shutil.copy2(oldfp,UPLOADS/ev["id"]/newname);ev["documents"].append(nd)
             self._audit(data,u,"event_cloned","event",ev["id"],f"from {source_id}")
             save_data(data);return self._json(201,{"event":ev,"shifts_created":len(shift_map)})
 
+        if p.path=="/api/event-documents":
+            if not manager:return self._json(403,{"error":"manager or admin required"})
+            event_id=str(body.get("event_id","")).strip();ev=next((e for e in data.get("events",[]) if e.get("id")==event_id),None)
+            if not ev:return self._json(404,{"error":"event not found"})
+            mime=str(body.get("mime_type","")).lower();name=Path(str(body.get("name","document"))).name
+            if mime not in ALLOWED_EVENT_FILE_TYPES:return self._json(400,{"error":"only PDF, JPG, PNG and WebP are allowed"})
+            try:payload=base64.b64decode(str(body.get("content_base64","")),validate=True)
+            except Exception:return self._json(400,{"error":"invalid file data"})
+            if not payload or len(payload)>MAX_EVENT_FILE_BYTES:return self._json(400,{"error":"file is empty or exceeds upload limit"})
+            did=uid("doc");stored=did+ALLOWED_EVENT_FILE_TYPES[mime];folder=UPLOADS/event_id;folder.mkdir(parents=True,exist_ok=True);(folder/stored).write_bytes(payload)
+            doc={"id":did,"name":name,"stored_name":stored,"mime_type":mime,"size":len(payload),"category":str(body.get("category","general")),"employee_visible":bool(body.get("employee_visible",True)),"uploaded_at":time.strftime("%Y-%m-%dT%H:%M:%S"),"uploaded_by":u.get("username","")}
+            ev.setdefault("documents",[]).append(doc);self._audit(data,u,"document_uploaded","event",event_id,name);save_data(data);return self._json(201,doc)
+
         if p.path=="/api/events":
             if not manager:return self._json(403,{"error":"manager or admin required"})
-            item={"id":uid("evt"),"name":str(body.get("name","")).strip(),"location":str(body.get("location","")).strip(),"start_date":body.get("start_date",""),"end_date":body.get("end_date",""),"notes":str(body.get("notes","")).strip(),"status":str(body.get("status","draft")).strip() or "draft","signup_mode":str(body.get("signup_mode","direct")).strip() or "direct","availability_deadline":str(body.get("availability_deadline","")).strip(),"availability_locked":bool(body.get("availability_locked",False))}
+            item={"id":uid("evt"),"name":str(body.get("name","")).strip(),"location":str(body.get("location","")).strip(),"start_date":body.get("start_date",""),"end_date":body.get("end_date",""),"notes":str(body.get("notes","")).strip(),"status":str(body.get("status","draft")).strip() or "draft","signup_mode":str(body.get("signup_mode","direct")).strip() or "direct","availability_deadline":str(body.get("availability_deadline","")).strip(),"availability_locked":bool(body.get("availability_locked",False)),"archived":False,"archived_at":"","documents":[]}
             if not item["name"] or not item["start_date"] or not item["end_date"]:return self._json(400,{"error":"name, start_date and end_date are required"})
-            data["events"].append(item);self._audit(data,u,"event_created","event",item["id"],item["name"]); save_data(data); return self._json(201,item)
+            data["events"].append(item)
+            created=[]
+            for sh in body.get("shifts",[]) if isinstance(body.get("shifts",[]),list) else []:
+                dates=sh.get("dates",[]) or [sh.get("date","")]
+                for dt in dates:
+                    if not dt or not sh.get("name") or not sh.get("start") or not sh.get("end"):continue
+                    si={"id":uid("shf"),"event_id":item["id"],"name":str(sh.get("name","")).strip(),"leader_person_id":str(sh.get("leader_person_id","")).strip(),"date":str(dt),"start":str(sh.get("start","")),"end":str(sh.get("end","")),"required":int(sh.get("required") or 1),"notes":str(sh.get("notes","")).strip(),"meeting_point":"","clothing":"","instructions":"","contact":""};data["shifts"].append(si);created.append(si)
+            self._audit(data,u,"event_created","event",item["id"],f'{item["name"]}; {len(created)} shifts'); save_data(data); return self._json(201,{"event":item,"shifts_created":len(created)})
         if p.path=="/api/people":
             if not manager:return self._json(403,{"error":"manager or admin required"})
-            item={"id":uid("per"),"name":str(body.get("name","")).strip(),"email":str(body.get("email","")).strip(),"phone":str(body.get("phone","")).strip(),"max_hours_day":float(body.get("max_hours_day") or 10)}
+            item={"id":uid("per"),"name":str(body.get("name","")).strip(),"email":str(body.get("email","")).strip(),"phone":str(body.get("phone","")).strip(),"max_hours_day":float(body.get("max_hours_day") or 10),"active":True}
             if not item["name"]:return self._json(400,{"error":"name is required"})
             data["people"].append(item); save_data(data); return self._json(201,item)
         if p.path=="/api/templates":
@@ -865,6 +951,30 @@ class Handler(SimpleHTTPRequestHandler):
             item={"id":uid("tpl"),"event_id":str(body.get("event_id","")).strip(),"date":str(body.get("date","")).strip(),"leader_person_id":str(body.get("leader_person_id","")).strip(),"name":str(body.get("name","")).strip(),"start":body.get("start",""),"end":body.get("end",""),"required":int(body.get("required") or 1),"notes":str(body.get("notes","")).strip()}
             if not all(item[k] for k in ("event_id","date","name","start","end")):return self._json(400,{"error":"template event, date, name, start and end are required"})
             data["templates"].append(item); save_data(data); return self._json(201,item)
+        if p.path=="/api/shifts/bulk":
+            if not manager:return self._json(403,{"error":"manager or admin required"})
+            dates=[str(d).strip() for d in body.get("dates",[]) if str(d).strip()]
+            if not dates:return self._json(400,{"error":"at least one date is required"})
+            base={"event_id":body.get("event_id",""),"name":str(body.get("name","")).strip(),"leader_person_id":str(body.get("leader_person_id","")).strip(),"start":body.get("start",""),"end":body.get("end",""),"required":int(body.get("required") or 1),"notes":str(body.get("notes","")).strip(),"meeting_point":str(body.get("meeting_point","")).strip(),"clothing":str(body.get("clothing","")).strip(),"instructions":str(body.get("instructions","")).strip(),"contact":str(body.get("contact","")).strip()}
+            if not all(base[k] for k in ("event_id","name","start","end")):return self._json(400,{"error":"event, name, start and end are required"})
+            created=[]
+            for d in dates:
+                item=dict(base);item["id"]=uid("shf");item["date"]=d;data["shifts"].append(item);created.append(item)
+            self._audit(data,u,"shifts_bulk_created","shift","",f"{len(created)} shifts for {base['name']}")
+            save_data(data); return self._json(201,{"created":created})
+
+        if len(parts)==4 and parts[0]=="api" and parts[1]=="shifts" and parts[3]=="duplicate":
+            if not manager:return self._json(403,{"error":"manager or admin required"})
+            src=next((s for s in data["shifts"] if s.get("id")==parts[2]),None)
+            if not src:return self._json(404,{"error":"shift not found"})
+            dates=[str(d).strip() for d in body.get("dates",[]) if str(d).strip()]
+            if not dates:return self._json(400,{"error":"at least one date is required"})
+            created=[]
+            for d in dates:
+                item=dict(src);item["id"]=uid("shf");item["date"]=d;data["shifts"].append(item);created.append(item)
+            self._audit(data,u,"shift_duplicated","shift",src["id"],f"{len(created)} copies")
+            save_data(data); return self._json(201,{"created":created})
+
         if p.path=="/api/shifts":
             if not manager:return self._json(403,{"error":"manager or admin required"})
             item={"id":uid("shf"),"event_id":body.get("event_id",""),"name":str(body.get("name","")).strip(),"leader_person_id":str(body.get("leader_person_id","")).strip(),"date":body.get("date",""),"start":body.get("start",""),"end":body.get("end",""),"required":int(body.get("required") or 1),"notes":str(body.get("notes","")).strip(),"meeting_point":str(body.get("meeting_point","")).strip(),"clothing":str(body.get("clothing","")).strip(),"instructions":str(body.get("instructions","")).strip(),"contact":str(body.get("contact","")).strip()}
@@ -903,10 +1013,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json(404,{"error":"not found"})
 
     def do_PATCH(self):
-        p=urlparse(self.path)
-        if not self._origin_allowed():return self._json(403,{"error":"origin not allowed"})
-        if not self._csrf_ok(p.path):return self._json(403,{"error":"invalid csrf token"})
-        parts=[x for x in p.path.split("/") if x]; data=load_data(); body=self._body(); u=self._require(data)
+        p=urlparse(self.path); parts=[x for x in p.path.split("/") if x]; data=load_data(); body=self._body(); u=self._require(data)
         if not u:return
         if len(parts)!=3 or parts[0]!="api":return self._json(404,{"error":"not found"})
         kind,item_id=parts[1],parts[2]; manager=u["role"] in ("admin","manager")
@@ -1010,11 +1117,13 @@ class Handler(SimpleHTTPRequestHandler):
         if not coll:return self._json(404,{"error":"not found"})
         item=next((x for x in data[coll] if x["id"]==item_id),None)
         if not item:return self._json(404,{"error":f"{kind} not found"})
-        allowed={"events":("name","location","start_date","end_date","notes","status","signup_mode","availability_deadline","availability_locked"),"people":("name","email","phone","max_hours_day"),"templates":("event_id","date","leader_person_id","name","start","end","required","notes"),"shifts":("event_id","name","leader_person_id","date","start","end","required","notes","meeting_point","clothing","instructions","contact"),"assignments":("person_id","actual_hours")}[kind]
+        allowed={"events":("name","location","start_date","end_date","notes","status","signup_mode","availability_deadline","availability_locked","archived"),"people":("name","email","phone","max_hours_day","active"),"templates":("event_id","date","leader_person_id","name","start","end","required","notes"),"shifts":("event_id","name","leader_person_id","date","start","end","required","notes","meeting_point","clothing","instructions","contact"),"assignments":("person_id","actual_hours")}[kind]
         old_status=item.get("status","draft") if kind=="events" else ""
         before=dict(item)
         for k in allowed:
-            if k in body:item[k]=float(body[k]) if k in ("max_hours_day","actual_hours") and str(body[k])!="" else int(body[k]) if k=="required" else bool(body[k]) if k=="availability_locked" else body[k]
+            if k in body:item[k]=float(body[k]) if k in ("max_hours_day","actual_hours") and str(body[k])!="" else int(body[k]) if k=="required" else bool(body[k]) if k in ("availability_locked","active") else body[k]
+        if kind=="events" and "archived" in body:
+            item["archived_at"]=time.strftime("%Y-%m-%dT%H:%M:%S") if item.get("archived") else ""
         if kind=="shifts":
             critical=("name","leader_person_id","date","start","end","meeting_point","clothing","instructions","contact")
             changed=[k for k in critical if k in body and before.get(k)!=item.get(k)]
@@ -1039,10 +1148,7 @@ class Handler(SimpleHTTPRequestHandler):
         save_data(data); return self._json(200,item)
 
     def do_DELETE(self):
-        p=urlparse(self.path)
-        if not self._origin_allowed():return self._json(403,{"error":"origin not allowed"})
-        if not self._csrf_ok(p.path):return self._json(403,{"error":"invalid csrf token"})
-        parts=[x for x in p.path.split("/") if x]; data=load_data(); u=self._require(data)
+        p=urlparse(self.path); parts=[x for x in p.path.split("/") if x]; data=load_data(); u=self._require(data)
         if not u:return
         if len(parts)!=3 or parts[0]!="api":return self._json(404,{"error":"not found"})
         kind,item_id=parts[1],parts[2]
@@ -1051,6 +1157,15 @@ class Handler(SimpleHTTPRequestHandler):
             if not item:return self._json(404,{"error":"not found"})
             if u["role"]=="employee" and item.get("person_id")!=u.get("person_id"):return self._json(403,{"error":"forbidden"})
             data["availability"]=[x for x in data["availability"] if x["id"]!=item_id]; save_data(data); return self._json(200,{"ok":True})
+        if kind=="event-documents":
+            if u["role"] not in ("admin","manager"):return self._json(403,{"error":"manager or admin required"})
+            for ev in data.get("events",[]):
+                doc=next((d for d in ev.get("documents",[]) if d.get("id")==item_id),None)
+                if doc:
+                    fp=UPLOADS/ev["id"]/doc.get("stored_name","")
+                    if fp.exists():fp.unlink()
+                    ev["documents"]=[d for d in ev.get("documents",[]) if d.get("id")!=item_id];self._audit(data,u,"document_deleted","event",ev["id"],doc.get("name",""));save_data(data);return self._json(200,{"ok":True})
+            return self._json(404,{"error":"document not found"})
         if u["role"] not in ("admin","manager"):return self._json(403,{"error":"manager or admin required"})
         if kind=="templates":data["templates"]=[x for x in data["templates"] if x["id"]!=item_id]
         elif kind=="assignments":
@@ -1070,6 +1185,9 @@ class Handler(SimpleHTTPRequestHandler):
             data["waitlist"]=[x for x in data["waitlist"] if x.get("shift_id")!=item_id]
             data["signup_requests"]=[x for x in data["signup_requests"] if x.get("shift_id")!=item_id]
         elif kind=="users" and u["role"]=="admin":data["users"]=[x for x in data["users"] if x["id"]!=item_id]
+        elif kind=="invites" and u["role"]=="admin":
+            data["invites"]=[x for x in data.get("invites",[]) if x["id"]!=item_id]
+            self._audit(data,u,"invite_revoked","invite",item_id)
         else:return self._json(404,{"error":"not found"})
         save_data(data); return self._json(200,{"ok":True})
 
@@ -1087,14 +1205,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("X-Frame-Options","DENY")
         self.send_header("Referrer-Policy","same-origin")
         self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")
-        self.send_header("Content-Security-Policy","default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; base-uri 'self'; frame-ancestors 'none'")
         if not self.path.startswith("/api/"):
             self.send_header("Cache-Control","no-store, no-cache, must-revalidate"); self.send_header("Pragma","no-cache"); self.send_header("Expires","0")
         super().end_headers()
 
 if __name__=="__main__":
-    _validate_runtime_config()
     host,port="0.0.0.0",int(os.getenv("PORT","8080"))
-    print(f"Höckeler Event Planung {APP_VERSION} ({ENVIRONMENT}) on http://localhost:{port}");print("Storage:","PostgreSQL" if DATABASE_URL else "local JSON development fallback")
+    print(f"Höckeler Event Planung v44 on http://localhost:{port}");print("Storage:","PostgreSQL" if DATABASE_URL else "local JSON development fallback")
     threading.Thread(target=_reminder_worker,name="reminder-worker",daemon=True).start()
     ThreadingHTTPServer((host,port),Handler).serve_forever()

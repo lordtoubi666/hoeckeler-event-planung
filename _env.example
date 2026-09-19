@@ -1,0 +1,8 @@
+DATABASE_URL=postgresql://hoeckeler:change-me@localhost:5432/hoeckeler
+AUTH_SECRET=replace-with-a-long-random-secret
+BOOTSTRAP_ADMIN=admin
+BOOTSTRAP_PASSWORD=ChangeMe123!
+PORT=8080
+
+ALLOW_JSON_FALLBACK=false
+COOKIE_SECURE=false

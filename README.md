@@ -276,58 +276,84 @@ The next shift card now prominently shows location, leader, meeting point, cloth
 ### Security
 Calendar subscription URLs are bearer secrets. Anyone who has the URL can read that employee's published shift calendar. Employees can regenerate the token at any time.
 
-## v45 – Production & GitHub Pages deployment
+## v45 – UI performance, bulk scheduling, bulk user management, personal settings
 
-v45 prepares the application for a real production system plus an isolated GitHub Pages test frontend.
+### Performance
+- The full-page re-render that used to run after every save or refresh was rebuilding around 35 sections regardless of which tab was open. The heaviest sections (Schichtkalender, Wochenplaner, Employee-Portal, Signups, Event-Cockpit, Reports) now only render while their tab is actually visible, cutting the work done on every action without changing what you see.
 
-### Deployment architecture
-- **Production:** Caddy HTTPS → Python application → dedicated production PostgreSQL.
-- **Test frontend:** GitHub Pages from the `develop` branch.
-- **Test API:** Caddy HTTPS → separate test application → separate test PostgreSQL.
-- The combined `docker-compose.server.yml` runs both backend environments with one Caddy reverse proxy.
+### Faster event scheduling
+- The "Neue Schicht" form now accepts several dates at once, creating the same shift on every selected day in one submit.
+- Every existing shift has a **Duplizieren** button to copy it onto additional dates without re-entering its details.
 
-### GitHub Pages
-The frontend now supports `window.HOECKELER_CONFIG.API_BASE_URL`, so the same UI can call a separate test API. All static asset, manifest and service-worker paths are repository-subdirectory safe.
+### Bulk user management
+- The Konten view now has selection checkboxes, a "Alle auswählen" toggle and a bulk action bar for admins: Aktivieren, Deaktivieren, Rolle setzen and Löschen across multiple accounts at once.
+- Individual accounts also gained direct Aktivieren/Deaktivieren and Löschen buttons (previously only editable via the API).
+- All bulk actions are recorded in the audit log.
 
-`develop` deploys the static test frontend automatically through `.github/workflows/deploy-pages.yml`.
-`main` remains the production branch. Production deployment is deliberately manual through the GitHub Actions workflow.
+### Personal settings
+- Each account can now choose a **Startansicht** (default view after login) under "Meine Benachrichtigungen" in Einstellungen — e.g. managers can land directly on Planung, employees on Meine Schichten. Leaving it on "Dashboard" keeps the previous behavior.
 
-### Security hardening
-- exact-origin credentialed CORS
-- CSRF token validation for authenticated write requests
-- secure/cross-site cookie modes
-- production startup refuses known unsafe defaults
-- password-reset request throttling
-- SMTP password and SMS bearer token are no longer returned in `/api/state`
-- expanded security headers
-- test notification redirection prevents messages from reaching real employee addresses/numbers
+## v46 – Active/inactive people, list search, bulk shift assignment
 
-### Test-system safety
-`TEST_MODE=true`:
-- prefixes email subjects with `[TEST]`
-- requires `TEST_EMAIL_REDIRECT`
-- requires `TEST_SMS_REDIRECT`
-- displays a prominent **TESTSYSTEM** banner in the frontend
+### People active/inactive
+- Person records now have an Aktiv/Inaktiv status, alongside the existing Aktiv/Inaktiv status on Konten.
+- Toggle it per person in the Personen view (Aktivieren/Deaktivieren button, status badge, "Inaktive anzeigen" filter to hide them by default).
+- Inactive people are automatically excluded from the Planner people palette and from staffing suggestions/automatic planning, so employees who left don't clutter new scheduling — their history and past assignments are untouched.
 
-### Operations
-Included:
-- production/test/combined Docker Compose files
-- Caddy configurations
-- environment templates
-- PostgreSQL backup script
-- CI validation workflow
-- GitHub Pages deployment workflow
-- manual production deployment workflow
-- detailed `DEPLOYMENT.md`
+### List search
+- Added search boxes to Events, Schichten, Schichtvorlagen and Konten (matching the existing Personen search), filtering by name, location, notes, linked event/leader or role.
 
-### Important
-For the cleanest browser authentication behavior, use a custom GitHub Pages domain such as `test-planung.example.ch` together with `test-api.example.ch`.
+### Bulk shift assignment
+- The "Zuweisen" panel on each shift now shows a checklist of available people instead of a single dropdown. Check as many as needed and assign them all in one submit.
+- Scheduling conflicts are collected and confirmed once for the whole batch, instead of one-by-one.
 
-## v46 – event.hoeckeler.ch
+## v48 – Invite links
 
-This build is preconfigured for:
+- Admins can now invite people by email instead of creating accounts by hand: **Konten → Per Link einladen**. Enter an email, role, and optionally link a person record — this creates a 7-day invite link, emails it automatically if SMTP is configured, and always shows a copyable link as a fallback.
+- The invited person opens the link, is shown their email/role, and picks their own username, display name and password — no admin-set password involved. Accepting logs them straight in.
+- Pending invites are listed with status (offen/angenommen/abgelaufen/zurückgezogen); admins can copy the link again or revoke a pending invite at any time.
+- Invite tokens are signed and expire automatically; nothing is stored that lets a stale or revoked link be reused.
 
-- `https://event.hoeckeler.ch` — GitHub Pages frontend
-- `https://api.event.hoeckeler.ch` — Python/PostgreSQL backend
+## v49 – Automatic person linking
 
-Push `main` to deploy the frontend. See `EVENT-HOECKELER-DEPLOYMENT.md` for DNS, HTTPS, Docker and firewall steps.
+- Accepting an invite that wasn't pre-linked to a person now automatically creates a matching Person record (using the name and email the invitee entered) and links the new account to it — no manual follow-up needed.
+- Konten now shows a **Verknüpfen** control on any account missing a person link: pick an existing Person, or click "Neue Person erstellen & verknüpfen" to generate one from the account's display name in one step.
+- New **"Unverknüpfte Konten automatisch mit Person verknüpfen"** button in Konten creates and links a Person for every currently-unlinked account in one pass — useful for catching up existing accounts created before this existed.
+
+## v50 – Create person + account in one step
+
+- Person and Konto are still two separate records under the hood (a Person can exist without ever logging in — e.g. someone scheduled but without app access — and a Konto can exist without a Person, like a pure admin account), but you no longer have to create them one after another by hand.
+- The **Neue Person** form (Personen view, admin only) now has an optional "Gleichzeitig ein Benutzerkonto für diese Person anlegen" checkbox. Ticking it lets you pick a role and either:
+  - send an invite link to the email entered above (same invite flow as before), or
+  - set a username and password directly, right there.
+- Submitting creates the Person and the linked Konto (or invite) together in one action — nothing left to link up afterward.
+
+## v51 – Account status visible on every person
+
+- The Personen list (admin only) now shows each person's account status directly: a linked Konto (name/username/role), a pending invitation, or "Kein Konto verknüpft".
+- People without an account get an **Einladen** button right there — no need to go find them in Konten first. Requires an email address on the person.
+- Pending invitations shown on a person can be copied, resent by email, or revoked directly from Personen, the same as from Konten.
+- New **Erneut senden** action for any pending invite (Personen or Konten) re-sends the same link by email without creating a duplicate invitation.
+
+## v52 – Simplified employee view
+
+- Employees now land on **Meine Schichten** after login by default (instead of the manager-oriented Dashboard) — no setup needed, though the existing Startansicht setting can still override it.
+- **Dashboard** and **Schichtkalender** are hidden from the employee sidebar entirely — both are manager-facing overviews across every person's shifts; Meine Schichten already gives employees the equivalent for their own schedule. Managers/admins are unaffected.
+- Inside Meine Schichten, the secondary "App installieren" / "Kalender abonnieren" / ".ics herunterladen" controls are now tucked behind a collapsed "App & Kalender-Abo" toggle instead of sitting at the top of the page, so the next shift and open shifts are the first thing an employee sees. Nothing was removed — it's one tap away.
+- Net effect: an employee's sidebar is now just Meine Schichten, Schichttausch, Benachrichtigungen and Einstellungen.
+
+## v47 – Self-service account settings for every role
+
+- The **Einstellungen** view is now reachable by every account, not just admins/managers — employees can now change their own password and edit their profile, which wasn't possible before (SMTP/SMS/reminder/planning-rule configuration stay admin/manager-only within that same view).
+- New **Mein Profil** panel: any account can update its display name and, if linked to a person, its email and phone number (used for notifications and the calendar feed).
+- Password change, notification preferences and the Startansicht (default view) picker were already self-service but were unreachable for employees before this release — they're now available to everyone from the same Einstellungen view.
+
+## v53 – Event Builder, Archiv & Event-Dokumente
+
+- Neue Event Library mit getrennten Ansichten für aktive und archivierte Events.
+- Event Builder erstellt Event und beliebig viele generierte Schichten in einem Schritt.
+- Schichtgenerator kann eine Schicht über einen Datumsbereich für mehrere Eventtage erzeugen.
+- Event duplizieren kopiert optional Schichten/Qualifikationen, Event-Team, Zuweisungen und Dokumente; die Kopie startet immer als Entwurf.
+- Archivieren erhält historische Schichten, Zuweisungen und Reports und kann rückgängig gemacht werden.
+- PDFs/JPG/PNG/WebP bis 20 MB können einem Event zugeordnet werden; Dokumente können für Mitarbeitende sichtbar oder manager-intern sein.
+- Event-Dateien liegen persistent im Upload-Verzeichnis und nicht im JSON/PostgreSQL-Zustand.

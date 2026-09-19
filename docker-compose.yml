@@ -19,6 +19,8 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+    volumes:
+      - event_uploads:/app/uploads
     environment:
       DATABASE_URL: postgresql://hoeckeler:change-me-db-password@db:5432/hoeckeler
       AUTH_SECRET: replace-with-a-long-random-secret
@@ -28,5 +30,7 @@ services:
       ALLOW_JSON_FALLBACK: "false"
       COOKIE_SECURE: "false"
 volumes:
+  event_uploads:
+    name: hoeckeler_event_planner_uploads
   postgres_data:
     name: hoeckeler_event_planner_postgres
