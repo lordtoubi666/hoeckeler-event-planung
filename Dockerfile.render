@@ -1,0 +1,23 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# v54 is kept in GitHub as a release ZIP. Extract it into the runtime image.
+COPY event_shift_planner_v54.zip /tmp/event_shift_planner_v54.zip
+RUN python -m zipfile -e /tmp/event_shift_planner_v54.zip /app \
+    && rm /tmp/event_shift_planner_v54.zip \
+    && if [ ! -f /app/server.py ]; then \
+         appdir="$(dirname "$(find /app -mindepth 2 -type f -name server.py | head -n 1)")"; \
+         test -n "$appdir"; cp -a "$appdir"/. /app/; \
+       fi \
+    && test -f /app/server.py \
+    && test -f /app/requirements.txt \
+    && test -f /app/static/index.html
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+ENV PORT=10000
+ENV UPLOAD_DIR=/app/uploads
+EXPOSE 10000
+
+CMD ["python","server.py"]
